@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Hardware Radar Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { background: #050505; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+        .block { background: #111; padding: 20px; border-radius: 15px; border: 1px solid #222; }
+        .model-info { color: #00ff88; font-size: 0.85rem; margin-bottom: 10px; }
+        h3 { margin-top: 0; color: #aaa; text-transform: uppercase; font-size: 0.9rem; letter-spacing: 1px; }
+        canvas { width: 100% !important; max-height: 300px; }
+    </style>
+</head>
+<body>
+
+    <div class="grid">
+        <div class="block">
+            <h3>Rendimiento (Radar Stacked)</h3>
+            <div id="cpu-name" class="model-info">...</div>
+            <div id="gpu-name" class="model-info">...</div>
+            <canvas id="radarChart"></canvas>
+        </div>
+
+        <div class="block">
+            <h3>Memorias (GB)</h3>
+            <p style="color:#666; font-size: 0.8rem;">Exterior: Disco | Interior: RAM</p>
+            <canvas id="pieChart"></canvas>
+        </div>
+
+        <div class="block">
+            <h3>Tráfico Wi-Fi (KB/s)</h3>
+            <canvas id="wifiChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        // 1. RADAR CHART
+        const radarChart = new Chart(document.getElementById('radarChart'), {
+            type: 'radar',
+            data: {
+                labels: ['Carga Actual', 'Pico', 'Promedio', 'Temperatura', 'Buffer'],
+                datasets: [
+                    { label: 'CPU', data: [0,0,0,0,0], fill: true, backgroundColor: 'rgba(0, 255, 136, 0.2)', borderColor: '#00ff88' },
+                    { label: 'GPU', data: [0,0,0,0,0], fill: true, backgroundColor: 'rgba(0, 153, 255, 0.2)', borderColor: '#0099ff' }
+                ]
+            },
+            options: { scales: { r: { beginAtZero: true, max: 100, grid: { color: '#333' } } } }
+        });
+
+        // 2. MULTI SERIES PIE (Doughnut)
+        const pieChart = new Chart(document.getElementById('pieChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Ocupado', 'Libre'],
+                datasets: [
+                    { label: 'Disco', data: [0, 1], backgroundColor: ['#ff4d4d', '#1a1a1a'], borderWidth: 0 },
+                    { label: 'RAM', data: [0, 1], backgroundColor: ['#00d4ff', '#1a1a1a'], borderWidth: 0 }
+                ]
+            },
+            options: { cutout: '30%' }
+        });
+
+        // 3. WIFI AREA CHART (Boundaries)
+        const wifiChart = new Chart(document.getElementById('wifiChart'), {
+            type: 'line',
+            data: {
+                labels: Array(20).fill(''),
+                datasets: [{ 
+                    label: 'Descarga', data: [], fill: true, 
+                    backgroundColor: 'rgba(255, 200, 0, 0.2)', borderColor: '#ffc800', tension: 0.4 
+                }]
+            },
+            options: { scales: { y: { beginAtZero: true } }, animation: false }
+        });
+
+        socket.on('hardware-info', (info) => {
+            document.getElementById('cpu-name').innerText = info.cpuModel;
+            document.getElementById('gpu-name').innerText = info.gpuModel;
+        });
+
+        socket.on('stats', (data) => {
+            // Update Radar (Simulamos puntos para el radar con la carga actual)
+            radarChart.data.datasets[0].data = [data.cpu, data.cpu*0.8, data.cpu*0.9, data.cpu, data.cpu*0.7];
+            radarChart.data.datasets[1].data = [data.gpu, data.gpu*0.7, data.gpu*0.8, data.gpu, data.gpu*0.6];
+            radarChart.update('none');
+
+            // Update Pie
+            pieChart.data.datasets[0].data = [data.diskUsed, data.diskFree];
+            pieChart.data.datasets[1].data = [data.ramUsed, data.ramFree];
+            pieChart.update();
+
+            // Update Wifi
+            wifiChart.data.datasets[0].data.push(data.wifi);
+            if(wifiChart.data.datasets[0].data.length > 20) wifiChart.data.datasets[0].data.shift();
+            wifiChart.update('none');
+        });
+    </script>
+</body>
+</html>
